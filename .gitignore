@@ -1,0 +1,24 @@
+# Python build and test artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+build/
+dist/
+*.egg-info/
+
+# Local account credentials, backups and environment files
+auth.json
+previous-auth.json
+account-switcher/
+profiles/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.log
+
+# macOS metadata
+.DS_Store

@@ -1,0 +1,17 @@
+{
+  "name": "codex-account-switcher",
+  "version": "0.1.0+codex.20260926150033",
+  "description": "Local CLI tool to save and switch Codex file-based account credentials.",
+  "author": {
+    "name": "Local developer"
+  },
+  "interface": {
+    "displayName": "Codex Account Switcher",
+    "shortDescription": "Save and switch local Codex CLI accounts.",
+    "longDescription": "Provides the codex-account command for isolated official login, local credential snapshots, and account switching.",
+    "developerName": "Local developer",
+    "category": "Productivity",
+    "capabilities": [],
+    "defaultPrompt": "Help me use Codex Account Switcher."
+  }
+}
