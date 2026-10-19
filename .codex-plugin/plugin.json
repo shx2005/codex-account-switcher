@@ -1,15 +1,15 @@
 {
   "name": "codex-account-switcher",
-  "version": "0.1.0+codex.20260926150033",
-  "description": "Local CLI tool to save and switch Codex file-based account credentials.",
+  "version": "0.2.0",
+  "description": "你是否厌倦了 Codex 多个账号之间来回切换？本地管理账号、调用官方登录、切换账号并查询额度。",
   "author": {
-    "name": "Local developer"
+    "name": "Haoxiang Sun"
   },
   "interface": {
     "displayName": "Codex Account Switcher",
-    "shortDescription": "Save and switch local Codex CLI accounts.",
-    "longDescription": "Provides the codex-account command for isolated official login, local credential snapshots, and account switching.",
-    "developerName": "Local developer",
+    "shortDescription": "本地管理 Codex 多账号与使用额度。",
+    "longDescription": "你是否厌倦了 Codex 多个账号之间来回切换？Use codex-account for isolated official login, local account profiles, switching, and usage limits.",
+    "developerName": "Haoxiang Sun",
     "category": "Productivity",
     "capabilities": [],
     "defaultPrompt": "Help me use Codex Account Switcher."

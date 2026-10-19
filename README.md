@@ -1,88 +1,165 @@
 # Codex Account Switcher
 
-本地账号管理命令，支持 macOS/Linux、Python 3.11+、Codex CLI 的 file 凭据存储。运行时无第三方 Python 依赖。
+你是否厌倦了 Codex 多个账号之间来回切换？
 
-## 常用命令
+用 `codex-account` 给账号起个名字，一条命令查看额度、保存登录、切换账号。账号留在本机，登录交给官方 Codex CLI。
 
-```sh
-codex-account list                  # 本地列表：当前标记、脱敏邮箱、缓存套餐
-codex-account list --usage          # 逐个查询所有存档账号的实时额度
-codex-account show                  # 当前账号及实时额度
-codex-account show main             # 指定账号及实时额度
-codex-account show main --local     # 只看本地信息，不联网
-codex-account usage main            # show 的同义命令
-codex-account add second            # 调用官方 codex login，添加并保存账号
-codex-account login second          # 与 add 相同
-codex-account save main             # 将当前登录保存为 main
-codex-account use second            # 切换；须先退出 Codex/ChatGPT
-codex-account remove second         # 删除该名称的本地存档
-codex-account status                # 查看当前文件账号名称
+**简体中文** | [English](README.en.md)
+
+[![CI](https://github.com/shx2005/codex-account-switcher/actions/workflows/ci.yml/badge.svg)](https://github.com/shx2005/codex-account-switcher/actions/workflows/ci.yml)
+[![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-blue)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
+```text
+$ codex-account list
+* main  [chatgpt]  a***@example.com  plus
+  work  [chatgpt]  b***@example.com  self_serve_business_prolite
+
+$ codex-account show main
+* main  [chatgpt]  a***@example.com  plus
+    codex  套餐：plus
+      5 小时：已用 25% / 剩余 75%；重置 2026-10-20 18:00:00 CST
+      7 天：已用 40% / 剩余 60%；重置 2026-10-25 18:00:00 CST
 ```
 
-`remove` 只删除指定存档；不调用官方 logout，不删除当前 auth.json 或 previous-auth.json，不撤销远端凭据。删除当前账号的存档后，当前仍登录，但显示为“尚未保存”。如果之后切换，未命名的当前账号仍会自动备份。这是删除管理列表条目的语义，不是清除所有凭据。
+> 以上为虚构示例。实际窗口长度、套餐和 Credits 以官方接口返回为准。
 
-## 登录统一调用官方 CLI
+## 项目特性
 
-插件只管理账号名称和保存位置。终端输入、输出、浏览器授权、OAuth、设备码、API key 读取全部交给 PATH 中当前安装的官方 `codex login`。不实现自己的 OAuth、client_id、授权 URL 或 token 刷新。
+- **命名账号管理**：保存 ChatGPT OAuth 或 OpenAI API key 登录，标记当前账号，默认脱敏邮箱。
+- **官方登录流程**：浏览器授权、设备码、API key 输入和 token 续期由本机官方 `codex` 处理。
+- **独立添加账号**：新账号在临时目录登录，成功后保存，不打断当前登录。
+- **实时额度查询**：查看当前、指定或全部存档账号的窗口用量、剩余比例、重置时间和服务返回的 Credits。
+- **查询无需模型请求**：通过官方 `codex app-server` 查询，不创建对话或发起模型推理。
+- **切换保留备份**：同步较新凭据、原子替换当前登录、保留切换前副本，自动备份未命名的当前账号。
+- **支持脚本调用**：JSON 输出、每账号超时、明确退出码；批量查询失败后继续处理其余账号。
+- **轻量本地运行**：macOS/Linux、Python 3.11+，运行时无第三方 Python 依赖；凭据目录 `700`、文件 `600`。
 
-```sh
-codex-account add second
-codex-account login second -- --device-auth
-codex-account login second --replace
-codex-account login second -- --help          # 显示官方 CLI 当前版本的登录帮助
-printenv OPENAI_API_KEY | codex-account add api -- --with-api-key
-```
+## 安装
 
-`--` 前是插件参数，后面的参数传给官方 `codex login`。`--replace` 允许更新同名存档；`--device-auth` 和 `--api-key` 仍支持作为兼容简写，其中 `--api-key` 也直接交给官方 CLI 从 stdin 读取，不再由插件提供隐藏输入提示。不要将 key 写成命令行参数。
+需要 macOS/Linux、Python 3.11+、Git，以及在 `PATH` 中可用的[官方 Codex CLI](https://learn.chatgpt.com/docs/cli)。
 
-默认通过 `shutil.which("codex")` 查找 CLI；可用 `CODEX_ACCOUNT_CLI=/absolute/path/to/codex` 指定。官方 CLI 升级后自动使用新版本。未来新增登录参数可经 `--` 透传；凭据格式和 app-server 协议如果发生不兼容变化，仍可能需要更新适配层，不能保证任意未来版本零维护。
-
-每次登录使用独立临时 CODEX_HOME，并追加官方 `-c cli_auth_credentials_store="file"` 保证结果可保存。成功后完整保存官方 auth.json，失败或取消不改变当前账号。临时目录不继承主目录的自定义 config.toml；系统级管理要求仍由官方 CLI 执行。隔离登录中的 token 刷新与官方账号登录流程均归官方实现负责。
-
-## 额度查询
-
-`show` 和 `usage` 默认联网；`list` 默认只读本地，`list --usage` 联网查询全部账号。输出主窗口、第二窗口、各模型额度桶、已用比例、剩余比例、窗口长度、当地时区重置时间、服务返回的套餐和 Credits。
+推荐使用 [pipx](https://pipx.pypa.io/stable/installation/)：
 
 ```sh
-codex-account list --usage --json
-codex-account show main --json
-codex-account show main --timeout 40
-```
-
-每账号超时默认 25 秒，支持 0–120 秒之间的正数。失败会报告错误，不伪装为 0% 或无限额度；缺失窗口显示“服务未提供”。零值与缺失值分开处理。JSON 为筛选后的信息，不包含 token、key 或完整 auth.json。若有账号查询失败，列表仍继续查询其余账号，最后返回非零退出码。API key 无 ChatGPT 订阅窗口，明确提示不支持，此时也返回非零；不推算 API 账单余额。
-
-额度由本机官方 `codex app-server` 的 `account/rateLimits/read` 查询，不直接维护私有 HTTP 接口，也不创建对话或发起模型推理。当前账号查询使用原 CODEX_HOME，让官方正常更新凭据；非当前账号在临时目录中查询，将官方续期后的凭据保存回该账号存档。查询可能由官方触发正常 token 续期，但不切换当前账号。
-
-本地列表套餐来自缓存 token 元数据，可能旧于实时额度中的套餐。邮箱默认脱敏；本地解码 JWT 仅用于匹配和展示，不作为验签或在线有效性验证。
-
-## 文件和切换
-
-- 命令入口：`~/.local/bin/codex-account`
-- 主程序：`~/plugins/codex-account-switcher/scripts/codex_account.py`
-- 官方 CLI 适配层：`~/plugins/codex-account-switcher/scripts/native_codex.py`
-- 存档：`$CODEX_HOME/account-switcher/profiles/<name>.json`
-- 切换前副本：`$CODEX_HOME/account-switcher/previous-auth.json`
-- 当前凭据：`$CODEX_HOME/auth.json`
-
-CODEX_HOME 默认 `~/.codex`，可用全局 `--home /absolute/path` 指定，放在子命令之前。账号名称为 1–48 位英文字母、数字、下划线或短横线，以字母或数字开头。
-
-凭据是明文，目录权限 700、文件权限 600。不要分享账号数据目录。插件代码目录不含账号凭据。新登录由官方展示自身登录提示；插件查询输出不展示 token/key。
-
-切换前保留较新的 refresh token，采用原子替换；同一账号根据官方 last_refresh 判断新旧，不可比较时优先当前文件。未命名的当前账号自动保存为 backup-时间戳。切换前请退出 Codex CLI 和 Codex/ChatGPT 桌面应用，然后从独立终端执行 `use`，再启动 CLI。插件会阻止在检测到这些进程运行时切换。不要同时进行官方登录、退出登录与插件操作；插件锁不能锁住官方客户端。
-
-当前支持普通 ChatGPT OAuth 和 OpenAI API key 的 file 存储。拒绝 keyring、auto、ephemeral；不自动改配置。企业访问令牌、自定义提供商、项目级凭据存储覆盖不在本版范围。CLI 与 IDE 共用登录缓存；ChatGPT 桌面主账号切换仍不在支持范围。项目和历史沿用同一 CODEX_HOME，不做账号数据隔离。
-
-## 验证与参考
-
-```sh
-python3 -m unittest discover -s ~/plugins/codex-account-switcher/tests -v
+pipx install 'git+https://github.com/shx2005/codex-account-switcher.git@v0.2.0'
+codex-account --version
 codex-account --help
 ```
 
-参考 sub2api 的窗口用量、重置时间、未知状态呈现思路，代码独立实现；没有引入中转服务或模型请求探测。
+也可以从源码安装到虚拟环境：
 
-- [sub2api account_usage_service.go](https://github.com/Wei-Shaw/sub2api/blob/main/backend/internal/service/account_usage_service.go)
-- [官方 App Server 认证与额度接口](https://learn.chatgpt.com/docs/app-server#auth-endpoints)
-- [官方登录与凭据存储](https://learn.chatgpt.com/docs/auth)
+```sh
+git clone https://github.com/shx2005/codex-account-switcher.git
+cd codex-account-switcher
+python3 -m venv .venv
+.venv/bin/python -m pip install .
+source .venv/bin/activate
+codex-account --help
+```
 
-本机验证 CLI 版本为 0.145.0。自动化测试使用虚构凭据；当前账号额度已做真实只读查询验证。
+工具支持 Codex 的 **`file` 凭据存储**。如果你决定使用文件存储，请在 `$CODEX_HOME/config.toml` 设置：
+
+```toml
+cli_auth_credentials_store = "file"
+```
+
+现有 keyring 登录不会自动迁移，设置后可通过 `codex-account add main` 重新登录并保存。工具不会自动修改你的配置。
+
+## 快速开始
+
+```sh
+codex-account save main          # 保存当前 Codex 登录
+codex-account add work           # 通过官方 CLI 添加另一个账号
+codex-account list --usage       # 对比全部账号的实时额度
+```
+
+切换前先退出 Codex CLI 和 Codex/ChatGPT 桌面应用，再从独立终端执行 `codex-account use work`，然后重启 Codex。工具检测到这些客户端仍在运行时会阻止切换；运行中的进程不会热切换。
+
+## 命令速查
+
+| 命令 | 用途 |
+| --- | --- |
+| `codex-account list` | 本地列表：当前标记、脱敏邮箱、缓存套餐 |
+| `codex-account list --usage` | 逐个查询全部存档账号的实时额度 |
+| `codex-account show` | 当前账号及实时额度 |
+| `codex-account show work` | 指定账号及实时额度 |
+| `codex-account show work --local` | 仅查看本地信息，不联网 |
+| `codex-account usage work` | `show work` 的同义命令 |
+| `codex-account save main` | 保存当前登录 |
+| `codex-account add work` | 调用官方登录并保存新账号 |
+| `codex-account login work --replace` | 重新登录并更新同名存档 |
+| `codex-account use work` | 切换到存档账号 |
+| `codex-account remove work` | 删除指定本地存档 |
+| `codex-account status` | 显示当前文件账号名称 |
+| `codex-account --version` | 显示版本 |
+
+`remove` 只删除指定存档。当前登录和切换前副本保留，不调用官方 logout，也不撤销远端凭据。
+
+### 登录、JSON 与配置
+
+```sh
+codex-account add work --device-auth
+codex-account login work -- --help
+codex-account login work -- --device-auth
+printenv OPENAI_API_KEY | codex-account add api --api-key
+codex-account list --usage --json
+codex-account show work --timeout 40
+codex-account --home /path/to/codex-home list
+```
+
+`--` 后的参数透传给官方 `codex login`。API key 由官方从标准输入读取，请勿将 key 直接写入命令行参数。每次登录使用独立临时 `CODEX_HOME`，失败或取消不会改变当前账号。
+
+`--home` 放在子命令前；默认读取 `CODEX_HOME`，未设置时使用 `~/.codex`。每账号查询默认超时 25 秒，允许大于 0 且不超过 120 秒。`--json` 仅输出筛选后的账号与额度字段，不包含 token、key 或完整凭据。可用 `CODEX_ACCOUNT_CLI=/absolute/path/to/codex` 指定官方 CLI。
+
+退出码：`0` 成功，`1` 操作或查询失败，`2` 参数错误，`130` 用户中断。API key 无 ChatGPT 订阅窗口，查询时会提示并返回 `1`，不会推算 API 账单余额。
+
+## 套餐与额度的显示规则
+
+账号行的套餐来自本地 token 的 `chatgpt_plan_type`；额度行来自官方接口的 `planType`。**两者分别原样显示，不做套餐别名转换或回退。**
+
+例如，本地登录显示 `self_serve_business_prolite`、额度接口返回 `unknown` 时，仍显示：
+
+```text
+* work  [chatgpt]  b***@example.com  self_serve_business_prolite
+    codex  套餐：unknown
+```
+
+`unknown` 表示接口未识别套餐名，不等于额度查询失败。用量按实际返回值显示；缺失窗口显示“服务未提供”，查询失败显示错误，不会当作 0% 或无限额度。
+
+当前账号在原 `CODEX_HOME` 查询；其他账号在临时目录查询，官方续期后的凭据保存回对应存档，不切换当前账号。
+
+## 本地数据与支持范围
+
+| 位置 | 内容 |
+| --- | --- |
+| `$CODEX_HOME/auth.json` | 当前 Codex 文件凭据 |
+| `$CODEX_HOME/account-switcher/profiles/<name>.json` | 本地账号存档 |
+| `$CODEX_HOME/account-switcher/previous-auth.json` | 切换前副本 |
+
+账号名为 1–48 位英文字母、数字、下划线或短横线，以字母或数字开头。凭据以明文保存在本机，请勿提交或分享数据目录。本地 JWT 解码仅用于匹配和展示，不用于验签或确认在线有效性。
+
+支持普通 ChatGPT OAuth 和 API key 的 `file` 存储。暂不支持 Windows、keyring/auto/ephemeral、企业访问令牌、自定义提供商或项目级凭据存储覆盖。ChatGPT 桌面主账号切换不在支持范围。项目与历史沿用同一 `CODEX_HOME`，不做账号数据隔离。
+
+不要同时进行官方登录、退出登录和本工具的账号操作；本地锁无法锁住官方客户端。独立登录和非当前账号的查询不继承主目录的自定义 `config.toml`。未来凭据格式或 app-server 协议变更可能需要更新适配层。
+
+## 开发与贡献
+
+```sh
+python3 -m unittest discover -s tests -v
+python3 scripts/codex_account.py --help
+```
+
+测试使用虚构凭据，无需登录。CI 覆盖 macOS/Linux 和 Python 3.11–3.14，并验证安装后的命令入口。欢迎提交 Issue 和 Pull Request；请参阅[贡献指南](CONTRIBUTING.md)和[安全说明](SECURITY.md)。
+
+独立社区项目，与 OpenAI 无隶属关系。参考[官方认证文档](https://learn.chatgpt.com/docs/auth)和 [App Server](https://learn.chatgpt.com/docs/app-server#auth-endpoints)。早期额度展示思路参考 [sub2api](https://github.com/Wei-Shaw/sub2api/blob/main/backend/internal/service/account_usage_service.go)，代码独立实现。
+
+## Star History
+
+如果这个工具帮你省下了切换账号的时间，欢迎点个 Star。
+
+[![Star History Chart](https://api.star-history.com/svg?repos=shx2005/codex-account-switcher&type=Date)](https://www.star-history.com/#shx2005/codex-account-switcher&Date)
+
+## 许可证
+
+[MIT](LICENSE) © 2026 Haoxiang Sun

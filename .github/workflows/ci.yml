@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python: ["3.11", "3.12", "3.13", "3.14"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Run tests with synthetic credentials
+        run: python -m unittest discover -s tests -v
+      - name: Install package
+        run: python -m pip install --no-deps .
+      - name: Check installed entry point
+        working-directory: ${{ runner.temp }}
+        run: |
+          codex-account --version
+          codex-account --help

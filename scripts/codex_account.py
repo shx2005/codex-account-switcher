@@ -21,6 +21,8 @@ from datetime import datetime, timezone
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import native_codex
 
+__version__ = "0.2.0"
+
 
 class Error(Exception):
     pass
@@ -333,6 +335,7 @@ class Accounts:
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description="本地保存和切换 Codex CLI 账号；不输出 token/key。")
+    parser.add_argument("--version", action="version", version="%(prog)s " + __version__)
     parser.add_argument("--home", type=Path, default=Path(os.environ.get("CODEX_HOME", Path.home() / ".codex")),
                         help="Codex 数据目录（默认 CODEX_HOME 或 ~/.codex）")
     sub = parser.add_subparsers(dest="command", required=True)
