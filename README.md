@@ -22,8 +22,6 @@ $ codex-account show main
       7 天：已用 40% / 剩余 60%；重置 2026-10-25 18:00:00 CST
 ```
 
-> 以上为虚构示例。实际窗口长度、套餐和 Credits 以官方接口返回为准。
-
 ## 项目特性
 
 - **命名账号管理**：保存 ChatGPT OAuth 或 OpenAI API key 登录，标记当前账号，默认脱敏邮箱。
