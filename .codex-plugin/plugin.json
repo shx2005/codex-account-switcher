@@ -1,14 +1,14 @@
 {
   "name": "codex-account-switcher",
-  "version": "0.2.0",
-  "description": "你是否厌倦了 Codex 多个账号之间来回切换？本地管理账号、调用官方登录、切换账号并查询额度。",
+  "version": "0.3.0",
+  "description": "你是否厌倦了 Codex 多个账号之间来回切换？本地管理账号、调用官方登录、查询额度，并导入导出到自己的设备。",
   "author": {
     "name": "Haoxiang Sun"
   },
   "interface": {
     "displayName": "Codex Account Switcher",
-    "shortDescription": "本地管理 Codex 多账号与使用额度。",
-    "longDescription": "你是否厌倦了 Codex 多个账号之间来回切换？Use codex-account for isolated official login, local account profiles, switching, and usage limits.",
+    "shortDescription": "本地管理 Codex 多账号、额度与跨设备迁移。",
+    "longDescription": "你是否厌倦了 Codex 多个账号之间来回切换？Use codex-account for official login, local profiles, usage limits, switching, and account export/import between your devices.",
     "developerName": "Haoxiang Sun",
     "category": "Productivity",
     "capabilities": [],

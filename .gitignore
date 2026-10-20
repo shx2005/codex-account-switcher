@@ -13,6 +13,8 @@ auth.json
 previous-auth.json
 account-switcher/
 profiles/
+*.codex-account.json
+*.codex-accounts.json
 .env
 .env.*
 !.env.example

@@ -21,7 +21,10 @@ from datetime import datetime, timezone
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import native_codex
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
+TRANSFER_FORMAT = "codex-account-switcher"
+TRANSFER_VERSION = 1
+MAX_TRANSFER_BYTES = 16 * 1024 * 1024
 
 
 class Error(Exception):
@@ -37,21 +40,27 @@ def private_dir(path):
     path.chmod(0o700)
 
 
-def read_json(path):
+def read_json(path, max_bytes=None):
     try:
-        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
-        with os.fdopen(fd) as f:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(fd, "rb") as f:
             if not stat.S_ISREG(os.fstat(f.fileno()).st_mode):
                 raise Error("凭据必须是普通文件。")
-            value = json.load(f)
+            if max_bytes is None:
+                value = json.load(f)
+            else:
+                data = f.read(max_bytes + 1)
+                if len(data) > max_bytes:
+                    raise Error("导入文件过大；最大支持 16 MiB。")
+                value = json.loads(data)
         if not isinstance(value, dict):
             raise Error("凭据格式不正确。")
         return value
-    except (ValueError, OSError):
+    except (ValueError, OSError, RecursionError):
         raise Error("无法读取凭据文件，文件不存在、格式损坏或为符号链接。") from None
 
 
-def write_json(path, value):
+def write_json(path, value, overwrite=True):
     if path.is_symlink():
         raise Error("拒绝覆盖符号链接。")
     fd, name = tempfile.mkstemp(prefix=".account-", dir=path.parent)
@@ -62,7 +71,11 @@ def write_json(path, value):
             f.write("\n")
             f.flush()
             os.fsync(f.fileno())
-        os.replace(name, path)
+        if overwrite:
+            os.replace(name, path)
+        else:
+            # Publish the complete file only if the destination is still absent.
+            os.link(name, path)
     finally:
         if os.path.exists(name):
             os.unlink(name)
@@ -233,6 +246,140 @@ class Accounts:
             raise Error("该名称属于另一个账号；如需替换，请显式使用 --replace。")
         write_json(target, auth)
 
+    def export_profiles(self, output, name=None, all_profiles=False, replace=False):
+        self.check_store()
+        if name and all_profiles:
+            raise Error("导出时账号名称和 --all 不能同时使用。")
+        if str(output) == "-":
+            raise Error("请指定导出文件路径；不支持将登录凭据输出到终端。")
+        output = Path(output).expanduser().absolute()
+        if output.resolve().is_relative_to(self.home.resolve()):
+            raise Error("请将导出文件保存到 CODEX_HOME 目录之外。")
+        saved = dict(self.entries())
+        live = read_json(self.auth) if self.auth.exists() else None
+        live_id = identity(live) if live is not None else None
+        if all_profiles:
+            selected = list(saved.items())
+        elif name is not None:
+            self.path(name)
+            if name not in saved:
+                raise Error("账号不存在：" + name)
+            selected = [(name, saved[name])]
+        else:
+            if live is None:
+                raise Error("当前未登录，请指定存档账号名称或使用 --all。")
+            current_name = next((n for n, v in saved.items() if identity(v) == live_id), None)
+            selected = [(current_name, saved[current_name])] if current_name is not None else [("current", live)]
+        if not selected:
+            raise Error("暂无可导出的账号存档。")
+        records = []
+        for profile_name, value in selected:
+            self.path(profile_name)
+            if identity(value) == live_id:
+                value = newest(live, value)
+            records.append({"name": profile_name, "auth": value})
+        bundle = {"format": TRANSFER_FORMAT, "version": TRANSFER_VERSION,
+                  "exported_at": datetime.now(timezone.utc).isoformat(), "accounts": records}
+        if len((json.dumps(bundle, ensure_ascii=False, indent=2) + "\n").encode()) > MAX_TRANSFER_BYTES:
+            raise Error("导出内容超过 16 MiB，请分别导出账号。")
+        if output.is_symlink() or (output.exists() and not output.is_file()):
+            raise Error("导出目标必须是普通文件，不能是符号链接。")
+        try:
+            write_json(output, bundle, overwrite=replace)
+        except FileExistsError:
+            raise Error("导出文件已存在；如需覆盖，请使用 --replace。") from None
+        print(f"已导出 {len(records)} 个账号到 {safe_text(output)}。")
+        print("文件包含明文登录凭据；请仅通过可信方式传到自己的设备，使用后删除。")
+
+    def import_profiles(self, source, name=None, replace=False):
+        self.check_store()
+        bundle = read_json(Path(source).expanduser(), max_bytes=MAX_TRANSFER_BYTES)
+        if "format" not in bundle and ("tokens" in bundle or "OPENAI_API_KEY" in bundle):
+            if name is None:
+                raise Error("导入原始 auth.json 时，请用 --name 指定账号名称。")
+            records = [{"name": name, "auth": bundle}]
+        else:
+            if bundle.get("format") != TRANSFER_FORMAT or type(bundle.get("version")) is not int or bundle["version"] != TRANSFER_VERSION:
+                raise Error("无法识别导出文件格式或版本。")
+            records = bundle.get("accounts")
+            if not isinstance(records, list) or not records:
+                raise Error("导出文件中没有有效的账号列表。")
+            if name is not None and len(records) != 1:
+                raise Error("--name 只能用于导入单个账号。")
+        incoming = {}
+        imported_ids = set()
+        for record in records:
+            if not isinstance(record, dict) or not isinstance(record.get("auth"), dict):
+                raise Error("导出文件中的账号格式不正确。")
+            target_name = name if name is not None else record.get("name")
+            if not isinstance(target_name, str):
+                raise Error("导出文件中的账号名称不正确。")
+            self.path(target_name)
+            who = identity(record["auth"])
+            if target_name in incoming or who in imported_ids:
+                raise Error("导出文件包含重复的账号名称或身份。")
+            imported_ids.add(who)
+            incoming[target_name] = record["auth"]
+        existing = dict(self.entries())
+        live = read_json(self.auth) if self.auth.exists() else None
+        live_id = identity(live) if live is not None else None
+        for target_name, value in incoming.items():
+            who = identity(value)
+            previous = existing.get(target_name)
+            if previous is not None:
+                if identity(previous) == who:
+                    value = newest(previous, value)
+                elif not replace:
+                    raise Error("账号名称冲突：" + target_name + "；请改名或使用 --replace。")
+            if who == live_id:
+                value = newest(live, value)
+            incoming[target_name] = value
+        # Validate the entire final set before changing any saved profile.
+        owners = {}
+        for profile_name, value in (existing | incoming).items():
+            who = identity(value)
+            if who in owners:
+                raise Error("该账号已保存为 " + owners[who] + "；请使用已有名称导入。")
+            owners[who] = profile_name
+        self._install_profiles(incoming, existing)
+        print(f"已导入 {len(incoming)} 个账号存档，当前登录未改变。")
+        print("切换请先退出 Codex/ChatGPT，再运行：codex-account use 账号名称")
+
+    def _install_profiles(self, incoming, existing):
+        staging = Path(tempfile.mkdtemp(prefix="import-", dir=self.root))
+        applied = []
+        keep_backup = False
+        try:
+            private_dir(staging / "new")
+            private_dir(staging / "backup")
+            for name, value in incoming.items():
+                write_json(staging / "new" / (name + ".json"), value)
+                if name in existing:
+                    write_json(staging / "backup" / (name + ".json"), existing[name])
+            try:
+                for name in incoming:
+                    target = self.path(name)
+                    if target.is_symlink():
+                        raise Error("拒绝覆盖符号链接。")
+                    os.replace(staging / "new" / (name + ".json"), target)
+                    applied.append(name)
+            except (Error, OSError, KeyboardInterrupt):
+                for name in reversed(applied):
+                    try:
+                        backup = staging / "backup" / (name + ".json")
+                        if name in existing:
+                            os.replace(backup, self.path(name))
+                        else:
+                            self.path(name).unlink()
+                    except OSError:
+                        keep_backup = True
+                if keep_backup:
+                    raise Error("导入失败且回滚未完成；恢复副本保存在：" + safe_text(staging)) from None
+                raise
+        finally:
+            if not keep_backup:
+                shutil.rmtree(staging, ignore_errors=True)
+
     def switch(self, name):
         self.check_store()
         target = read_json(self.path(name))
@@ -358,6 +505,15 @@ def main(argv=None):
         p.add_argument("--local", action="store_true", help="仅查看本地信息，不联网")
         p.add_argument("--json", action="store_true")
         p.add_argument("--timeout", type=float, default=25)
+    p = sub.add_parser("export", help="将当前、指定或全部存档账号导出到文件")
+    p.add_argument("name", nargs="?")
+    p.add_argument("--all", action="store_true", help="导出全部已保存的账号")
+    p.add_argument("-o", "--output", type=Path, required=True, help="包含登录凭据的导出文件路径")
+    p.add_argument("--replace", action="store_true", help="允许覆盖已有导出文件")
+    p = sub.add_parser("import", help="导入账号存档，不切换当前登录")
+    p.add_argument("file", type=Path)
+    p.add_argument("--name", help="为单个导入账号指定名称")
+    p.add_argument("--replace", action="store_true", help="允许替换属于其他账号的同名存档")
     sub.add_parser("status", help="显示当前文件凭据状态")
     raw = list(sys.argv[1:] if argv is None else argv)
     native_args = []
@@ -365,6 +521,8 @@ def main(argv=None):
         boundary = raw.index("--")
         native_args, raw = raw[boundary+1:], raw[:boundary]
     args = parser.parse_args(raw)
+    if args.command == "export" and args.name is not None and args.all:
+        parser.error("账号名称和 --all 不能同时使用。")
     if native_args and args.command not in ("login", "add"):
         parser.error("只有 login/add 支持 -- 后的官方参数。")
     if hasattr(args, "timeout") and (not math.isfinite(args.timeout) or not 0 < args.timeout <= 120):
@@ -376,6 +534,10 @@ def main(argv=None):
                 accounts.login(args.name, args.api_key, args.device_auth, args.replace, native_args)
             elif args.command == "remove":
                 accounts.remove(args.name)
+            elif args.command == "export":
+                accounts.export_profiles(args.output, args.name, args.all, args.replace)
+            elif args.command == "import":
+                accounts.import_profiles(args.file, args.name, args.replace)
             elif args.command == "save":
                 accounts.check_store()
                 accounts.save(args.name, read_json(accounts.auth), args.replace)

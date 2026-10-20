@@ -25,6 +25,7 @@ $ codex-account show main
 ## 项目特性
 
 - **命名账号管理**：保存 ChatGPT OAuth 或 OpenAI API key 登录，标记当前账号，默认脱敏邮箱。
+- **跨设备迁移**：导出当前、指定或全部存档账号，在自己的另一台电脑导入，支持改名和冲突检查。
 - **官方登录流程**：浏览器授权、设备码、API key 输入和 token 续期由本机官方 `codex` 处理。
 - **独立添加账号**：新账号在临时目录登录，成功后保存，不打断当前登录。
 - **实时额度查询**：查看当前、指定或全部存档账号的窗口用量、剩余比例、重置时间和服务返回的 Credits。
@@ -40,7 +41,7 @@ $ codex-account show main
 推荐使用 [pipx](https://pipx.pypa.io/stable/installation/)：
 
 ```sh
-pipx install 'git+https://github.com/shx2005/codex-account-switcher.git@v0.2.0'
+pipx install 'git+https://github.com/shx2005/codex-account-switcher.git@v0.3.0'
 codex-account --version
 codex-account --help
 ```
@@ -74,6 +75,39 @@ codex-account list --usage       # 对比全部账号的实时额度
 
 切换前先退出 Codex CLI 和 Codex/ChatGPT 桌面应用，再从独立终端执行 `codex-account use work`，然后重启 Codex。工具检测到这些客户端仍在运行时会阻止切换；运行中的进程不会热切换。
 
+## 导出到自己的另一台电脑
+
+在这台电脑导出：
+
+```sh
+codex-account export --all -o accounts.codex-accounts.json   # 全部已保存账号
+codex-account export work -o work.codex-account.json        # 指定账号
+codex-account export -o current.codex-account.json          # 当前登录
+```
+
+将文件通过 SSH/SCP 等可信方式传到自己的另一台电脑，安装 v0.3.0 或更新版本后执行：
+
+```sh
+codex-account import accounts.codex-accounts.json
+codex-account list
+# 退出 Codex/ChatGPT 后，再从独立终端切换
+codex-account use work
+```
+
+导入单个账号时可以改名，也支持直接导入官方 `auth.json`：
+
+```sh
+codex-account import work.codex-account.json --name laptop
+codex-account import /path/to/auth.json --name main
+codex-account import work.codex-account.json --name work --replace
+```
+
+导入只写入账号存档，不修改当前 `auth.json`，也不自动切换或联网验证登录。若凭据已失效，请使用 `codex-account login 名称 --replace` 重新登录。相同名称属于不同账号时，必须改名或加 `--replace`；同一账号已用另一名称保存时，需使用已有名称导入。同一身份的凭据优先保留官方 `last_refresh` 较新的版本，无法比较时优先本机已有凭据。
+
+`export --all` 只导出已保存的账号；未存档的当前登录可用不带名称的 `export` 导出，名称为 `current`。导出包含完整登录凭据和账号名，不包含配置、聊天历史或项目。导出时也会选择当前文件和存档中较新的同一账号凭据，不改动原文件。
+
+**导出文件是明文登录凭据，请像密码一样保管，只传到自己的可信设备，导入后删除。** 文件权限为 `600`，内容不会打印到终端；默认拒绝覆盖已有文件，需要覆盖时用 `export ... --replace`。请保存到 `CODEX_HOME` 之外的已有目录。导入限制为 16 MiB，整包校验后才写入，普通写入失败时会回滚已写入的存档。
+
 ## 命令速查
 
 | 命令 | 用途 |
@@ -89,6 +123,9 @@ codex-account list --usage       # 对比全部账号的实时额度
 | `codex-account login work --replace` | 重新登录并更新同名存档 |
 | `codex-account use work` | 切换到存档账号 |
 | `codex-account remove work` | 删除指定本地存档 |
+| `codex-account export --all -o accounts.codex-accounts.json` | 导出全部已保存账号 |
+| `codex-account export work -o work.codex-account.json` | 导出指定账号 |
+| `codex-account import accounts.codex-accounts.json` | 导入账号存档，保留当前登录 |
 | `codex-account status` | 显示当前文件账号名称 |
 | `codex-account --version` | 显示版本 |
 

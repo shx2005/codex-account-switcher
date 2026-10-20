@@ -103,7 +103,7 @@ def rate_limits(home, timeout=25):
             return value
 
     try:
-        request(1, "initialize", {"clientInfo": {"name": "codex_account_switcher", "version": "0.2.0"}})
+        request(1, "initialize", {"clientInfo": {"name": "codex_account_switcher", "version": "0.3.0"}})
         send({"method": "initialized", "params": {}})
         return request(2, "account/rateLimits/read")
     except (OSError, ValueError):

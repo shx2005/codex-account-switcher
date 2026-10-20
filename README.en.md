@@ -27,6 +27,7 @@ The example uses fictional data. CLI messages are currently in Chinese: 套餐 m
 ## Features
 
 - **Named profiles**: save ChatGPT OAuth or OpenAI API key logins, mark the active account, and mask email addresses.
+- **Move between your devices**: export the current, a named, or all saved accounts, then import on another computer with optional renaming and conflict checks.
 - **Official login**: browser authentication, device codes, API key input, and token refresh are handled by your installed official `codex` CLI.
 - **Isolated account setup**: add an account in a temporary directory while keeping your current login available.
 - **Live usage**: inspect the current account, a named account, or every saved profile, including usage, remaining percentages, reset times, and service-provided Credits.
@@ -42,7 +43,7 @@ Requires macOS/Linux, Python 3.11+, Git, and the [official Codex CLI](https://le
 Install with [pipx](https://pipx.pypa.io/stable/installation/):
 
 ```sh
-pipx install 'git+https://github.com/shx2005/codex-account-switcher.git@v0.2.0'
+pipx install 'git+https://github.com/shx2005/codex-account-switcher.git@v0.3.0'
 codex-account --version
 codex-account --help
 ```
@@ -76,6 +77,39 @@ codex-account list --usage       # Compare usage across all saved accounts
 
 To switch, exit the Codex CLI and Codex/ChatGPT desktop apps, run `codex-account use work` in a separate terminal, and restart Codex. Switching is blocked while these clients are detected; running processes do not pick up account changes automatically.
 
+## Export to another computer you own
+
+Export on the source computer:
+
+```sh
+codex-account export --all -o accounts.codex-accounts.json   # All saved accounts
+codex-account export work -o work.codex-account.json        # A named account
+codex-account export -o current.codex-account.json          # Current login
+```
+
+Transfer the file to your other computer using a trusted method such as SSH/SCP. Install v0.3.0 or later there, then run:
+
+```sh
+codex-account import accounts.codex-accounts.json
+codex-account list
+# Close Codex/ChatGPT first, then switch from a separate terminal
+codex-account use work
+```
+
+You can rename a single imported account or import an official `auth.json` directly:
+
+```sh
+codex-account import work.codex-account.json --name laptop
+codex-account import /path/to/auth.json --name main
+codex-account import work.codex-account.json --name work --replace
+```
+
+Import adds saved profiles without modifying the active `auth.json`, switching accounts, or checking online validity. If credentials have expired, sign in again with `codex-account login NAME --replace`. A name owned by a different account requires a new name or `--replace`. If the same identity is already saved under another name, import using that existing name. For the same identity, the newer official `last_refresh` wins; existing local credentials take precedence when timestamps cannot be compared.
+
+`export --all` includes saved profiles only. Export an unsaved current login without a name; its exported name is `current`. Exports contain complete login credentials and profile names, without configuration, chat history, or projects. Export also selects the newer same-account credentials from the active file and saved profile without changing either original file.
+
+**Export files contain plaintext login credentials. Treat them like passwords, transfer only to your trusted devices, and delete them after importing.** Files have mode `600`; credentials are never printed to the terminal. Existing files are preserved unless you use `export ... --replace`. Choose an existing directory outside `CODEX_HOME`. Imports are limited to 16 MiB and fully validated before writing; ordinary write failures roll back already installed profiles.
+
 ## Commands
 
 | Command | Purpose |
@@ -91,6 +125,9 @@ To switch, exit the Codex CLI and Codex/ChatGPT desktop apps, run `codex-account
 | `codex-account login work --replace` | Sign in again and update an existing profile |
 | `codex-account use work` | Switch to a saved account |
 | `codex-account remove work` | Delete a named local snapshot |
+| `codex-account export --all -o accounts.codex-accounts.json` | Export all saved profiles |
+| `codex-account export work -o work.codex-account.json` | Export a named account |
+| `codex-account import accounts.codex-accounts.json` | Import profiles without changing the current login |
 | `codex-account status` | Current file-based account name |
 | `codex-account --version` | Show the version |
 
